@@ -5,19 +5,25 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { mockCitizenReport } from "../data/mockData";
+// import { api } from "../services/api";
 
 export function CitizenApp() {
   const [step, setStep] = useState<'form' | 'tracking'>('form');
   const [isGeotagging, setIsGeotagging] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [location, setLocation] = useState('');
-  const [wasteType, setWasteType] = useState('');
+  const [coords, setCoords] = useState({ lat: 12.9716, lng: 77.5946 });
+  const [wasteType, setWasteType] = useState('Mixed Waste');
   const [photo, setPhoto] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
+  const [reportId, setReportId] = useState("");
 
   const handleGeoTag = () => {
     setIsGeotagging(true);
     // Simulate geolocation
     setTimeout(() => {
       setLocation('100 Feet Road, Indiranagar, Bengaluru - 560038');
+      setCoords({ lat: 12.9352, lng: 77.6245 });
       setWasteType('Mixed Waste');
       setIsGeotagging(false);
     }, 1500);
@@ -34,8 +40,33 @@ export function CitizenApp() {
     }
   };
 
-  const handleSubmit = () => {
-    setStep('tracking');
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("http://localhost:5000/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat: coords.lat,
+          lng: coords.lng,
+          ward: 'Indiranagar',
+          waste_type: wasteType,
+          description: description,
+          photo: photo,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to submit report");
+      
+      const result = await response.json();
+      setReportId(result.id);
+      setStep('tracking');
+    } catch (error) {
+      console.error("Failed to submit report:", error);
+      alert("Submission failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -148,17 +179,19 @@ export function CitizenApp() {
                   <textarea
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2d7738] min-h-[100px]"
                     placeholder="Add any additional details about the waste dump..."
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
                   />
                 </div>
 
                 {/* Submit Button */}
-                <Button
+                 <Button
                   onClick={handleSubmit}
-                  disabled={!location || !photo}
+                  disabled={!location || !photo || isSubmitting}
                   className="w-full bg-[#2d7738] hover:bg-[#245d2d] h-12 text-base"
                 >
-                  <Upload className="h-5 w-5 mr-2" />
-                  Submit Report
+                  {isSubmitting ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Upload className="h-5 w-5 mr-2" />}
+                  {isSubmitting ? "Submitting..." : "Submit Report"}
                 </Button>
               </div>
             </Card>
@@ -183,8 +216,8 @@ export function CitizenApp() {
               <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
                 <CheckCircle2 className="h-8 w-8 text-green-600" />
               </div>
-              <h1 className="text-2xl font-bold mb-2">Report Submitted!</h1>
-              <p className="text-gray-600">Report ID: {mockCitizenReport.id}</p>
+               <h1 className="text-2xl font-bold mb-2">Report Submitted!</h1>
+              <p className="text-gray-600">Report ID: {reportId}</p>
             </div>
 
             {/* Status Timeline */}

@@ -5,6 +5,8 @@ import { CitizenApp } from "./components/CitizenApp";
 import { OfficerDashboard } from "./components/OfficerDashboard";
 import { TruckRoutes } from "./components/TruckRoutes";
 import { Analytics } from "./components/Analytics";
+import { Login } from "./components/Login";
+import { Signup } from "./components/Signup";
 
 export const router = createBrowserRouter([
   {
@@ -18,4 +20,6 @@ export const router = createBrowserRouter([
       { path: "analytics", Component: Analytics },
     ],
   },
+  { path: "/login", Component: Login },
+  { path: "/signup", Component: Signup },
 ]);

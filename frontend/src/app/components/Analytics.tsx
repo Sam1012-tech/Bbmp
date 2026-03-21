@@ -1,10 +1,51 @@
-import { TrendingUp, TrendingDown, MapPin, Award, AlertCircle } from "lucide-react";
-import { analyticsData } from "../data/mockData";
+import { useState, useEffect } from "react";
+import { TrendingUp, TrendingDown, MapPin, Award, AlertCircle, Loader2 } from "lucide-react";
+import { api } from "../services/api";
+import { analyticsData as mockAnalyticsData } from "../data/mockData";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 export function Analytics() {
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await api.getSummary();
+        // The backend summary has slightly different keys/structure than mockData
+        // We'll merge them or map them. For now, let's use the backend data
+        // and fallback to mock for parts the backend doesn't have yet.
+        setAnalyticsData({
+          ...mockAnalyticsData,
+          totalDumpsDetected: data.totalDumpsDetected,
+          activeDumps: data.activeDumps,
+          cleanedThisMonth: data.cleanedThisMonth,
+          avgCleanupTime: data.avgCleanupTime,
+          topPerformingWard: data.topPerformingWard,
+          worstPerformingWard: data.worstPerformingWard,
+          detectionAccuracy: data.detectionAccuracy,
+          citizenReports: data.citizenReports,
+        });
+      } catch (err) {
+        console.error("Failed to load analytics", err);
+        setAnalyticsData(mockAnalyticsData); // Fallback to mock on error
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  if (loading || !analyticsData) {
+    return (
+      <div className="min-h-[calc(100vh-73px)] flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-10 w-10 animate-spin text-[#2d7738]" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-[calc(100vh-73px)] bg-gray-50 p-4 lg:p-8">
       <div className="max-w-7xl mx-auto">
@@ -125,7 +166,7 @@ export function Analytics() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {analyticsData.severityDistribution.map((entry, index) => (
+                  {analyticsData.severityDistribution.map((entry: { name: string, value: number, color: string }, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -181,7 +222,7 @@ export function Analytics() {
                 </tr>
               </thead>
               <tbody>
-                {analyticsData.wardPerformance.map((ward, index) => (
+                {analyticsData.wardPerformance.map((ward: { ward: string, score: number, dumps: number, avgTime: number }, index: number) => (
                   <tr key={ward.ward} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">

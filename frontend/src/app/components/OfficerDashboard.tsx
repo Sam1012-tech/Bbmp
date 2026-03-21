@@ -1,17 +1,135 @@
-import { useState } from "react";
-import { AlertTriangle, Clock, Truck, CheckCircle2, ArrowUpRight, Filter } from "lucide-react";
-import { dumpSites, type DumpSite } from "../data/mockData";
+import { useState, useEffect, useRef } from "react";
+import { AlertTriangle, Clock, Truck, CheckCircle2, ArrowUpRight, Filter, Loader2, X, Navigation, MapPin } from "lucide-react";
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { type DumpSite } from "../data/mockData";
+import { api } from "../services/api";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
+// Fix Leaflet marker icons
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
 export function OfficerDashboard() {
   const [sortBy, setSortBy] = useState<'priority' | 'date' | 'severity'>('priority');
   const [selectedAlert, setSelectedAlert] = useState<DumpSite | null>(null);
+  const [activeDumps, setActiveDumps] = useState<DumpSite[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const activeDumps = dumpSites.filter((site) => site.status !== 'cleaned');
+  // Dynamic Metrics
+  const [assignedToday, setAssignedToday] = useState(8);
+  const [completedToday, setCompletedToday] = useState(12);
+
+  // Route & Map State
+  const [activeRoute, setActiveRoute] = useState<any>(null);
+  const [routeAssignedTo, setRouteAssignedTo] = useState<string | null>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+
+  // Assignment Modal State
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [assignForm, setAssignForm] = useState({
+    source: "",
+    destination: "",
+    severity: "Medium"
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await api.getDumpsites();
+        // Map GeoJSON to flat DumpSite type
+        const sites = data.features.map((f: any) => ({
+          ...f.properties,
+          lat: f.geometry.coordinates[1],
+          lng: f.geometry.coordinates[0],
+        }));
+        setActiveDumps(sites.filter((site: any) => site.status !== 'cleaned'));
+      } catch (err) {
+        console.error("Failed to load dumpsites", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  // Map Lifecycle Effect
+  useEffect(() => {
+    // Cleanup function to destroy map instance
+    const cleanupMap = () => {
+      if (mapInstance.current) {
+        console.log("Cleaning up map instance");
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
+    };
+
+    if (!activeRoute || !mapRef.current || routeAssignedTo !== selectedAlert?.id) {
+      if (!activeRoute) cleanupMap();
+      return;
+    }
+
+    // Small timeout to ensure container is rendered and sized
+    const timer = setTimeout(() => {
+      cleanupMap(); // Ensure no double instance
+
+      console.log("Initializing map for alert:", selectedAlert?.id);
+      const map = L.map(mapRef.current!).setView([12.9716, 77.5946], 13);
+      mapInstance.current = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+        attribution: '&copy; OpenStreetMap contributors' 
+      }).addTo(map);
+
+      if (activeRoute.geometry) {
+        const polyline = L.polyline(activeRoute.geometry.coordinates.map((c: any) => [c[1], c[0]]), { 
+          color: '#3b82f6', 
+          weight: 5, 
+          opacity: 0.7 
+        }).addTo(map);
+
+        if (selectedAlert) {
+           L.marker([selectedAlert.lat, selectedAlert.lng], {
+             icon: L.icon({
+               iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+               shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+               iconSize: [25, 41],
+               iconAnchor: [12, 41]
+             })
+           }).addTo(map).bindPopup("Waste Pickup Point");
+        }
+
+        L.marker([12.9716, 77.5946], {
+          icon: L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41]
+          })
+        }).addTo(map).bindPopup("Processing Center");
+
+        map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+      }
+    }, 200); // Increased timeout slightly for reliable container detection
+
+    return () => {
+      clearTimeout(timer);
+      // We don't necessarily want to cleanup on every tiny change if activeRoute persists
+      // but Leaflet needs a fresh container usually if the div unmounts/remounts.
+    };
+  }, [activeRoute, selectedAlert?.id, routeAssignedTo]);
 
   const sortedDumps = [...activeDumps].sort((a, b) => {
     if (sortBy === 'priority') return b.priorityScore - a.priorityScore;
@@ -40,6 +158,14 @@ export function OfficerDashboard() {
       case 'low': return 'text-blue-600 bg-blue-50';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-[calc(100vh-73px)] flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-10 w-10 animate-spin text-[#2d7738]" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-73px)] bg-gray-50">
@@ -76,7 +202,7 @@ export function OfficerDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-gray-600">Assigned Today</p>
-                <p className="text-2xl font-bold mt-1">8</p>
+                <p className="text-2xl font-bold mt-1">{assignedToday}</p>
               </div>
               <div className="p-2 bg-blue-100 rounded-lg">
                 <Truck className="h-5 w-5 text-blue-600" />
@@ -88,7 +214,7 @@ export function OfficerDashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-gray-600">Completed Today</p>
-                <p className="text-2xl font-bold mt-1">12</p>
+                <p className="text-2xl font-bold mt-1">{completedToday}</p>
               </div>
               <div className="p-2 bg-green-100 rounded-lg">
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
@@ -188,7 +314,12 @@ export function OfficerDashboard() {
                           className="flex-1 bg-[#2d7738] hover:bg-[#245d2d]"
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Handle assign truck
+                            setAssignForm({
+                              ...assignForm,
+                              destination: dump.ward,
+                              severity: dump.severity.charAt(0).toUpperCase() + dump.severity.slice(1)
+                            });
+                            setIsAssignModalOpen(true);
                           }}
                         >
                           <Truck className="h-4 w-4 mr-2" />
@@ -226,56 +357,106 @@ export function OfficerDashboard() {
           <div className="lg:col-span-1">
             {selectedAlert ? (
               <Card className="p-6 sticky top-24">
-                <h2 className="font-semibold mb-4">Alert Details</h2>
-                
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Satellite Image</p>
-                    <img
-                      src={selectedAlert.satelliteImage}
-                      alt="Satellite"
-                      className="w-full h-32 object-cover rounded-lg"
+                {activeRoute && routeAssignedTo === selectedAlert.id ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h2 className="font-bold text-lg text-[#2d7738] flex items-center gap-2">
+                        <Navigation className="h-5 w-5" />
+                        Live Route Tracking
+                      </h2>
+                      <Badge className="bg-green-100 text-green-700">En Route</Badge>
+                    </div>
+                    
+                    <div 
+                      ref={mapRef} 
+                      className="w-full h-80 rounded-xl overflow-hidden border-2 border-slate-100 shadow-inner z-0" 
                     />
-                  </div>
 
-                  {selectedAlert.citizenPhoto && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Citizen Photo</p>
-                      <img
-                        src={selectedAlert.citizenPhoto}
-                        alt="Citizen report"
-                        className="w-full h-32 object-cover rounded-lg"
-                      />
+                    <div className="bg-slate-50 p-4 rounded-xl space-y-3">
+                       <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-red-500" />
+                          <div className="text-xs">
+                             <p className="text-gray-500">Pickup Point</p>
+                             <p className="font-semibold">{selectedAlert.ward}</p>
+                          </div>
+                       </div>
+                       <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-green-500" />
+                          <div className="text-xs">
+                             <p className="text-gray-500">Destination</p>
+                             <p className="font-semibold">Central Processing Center</p>
+                          </div>
+                       </div>
                     </div>
-                  )}
 
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Location</p>
-                    <p className="text-sm font-semibold">{selectedAlert.ward}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Coordinates</p>
-                    <p className="text-sm font-mono">{selectedAlert.lat.toFixed(4)}, {selectedAlert.lng.toFixed(4)}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Priority Score</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={selectedAlert.priorityScore} className="flex-1" />
-                      <span className="text-sm font-semibold">{selectedAlert.priorityScore}</span>
+                    <div className="pt-2">
+                       <Button 
+                         variant="outline" 
+                         className="w-full border-red-200 text-red-600 hover:bg-red-50 h-10"
+                         onClick={() => {
+                            setActiveRoute(null);
+                            setRouteAssignedTo(null);
+                            setSelectedAlert(null);
+                         }}
+                       >
+                         Close Tracking
+                       </Button>
                     </div>
                   </div>
+                ) : (
+                  <>
+                    <h2 className="font-semibold mb-4">Alert Details</h2>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Satellite Image</p>
+                        <img
+                          src={selectedAlert.satelliteImage}
+                          alt="Satellite"
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                      </div>
 
-                  <div className="pt-4 border-t">
-                    <Button className="w-full bg-[#2d7738] hover:bg-[#245d2d] mb-2">
-                      View on Map
-                    </Button>
-                    <Button variant="outline" className="w-full">
-                      Download Report
-                    </Button>
-                  </div>
-                </div>
+                      {selectedAlert.citizenPhoto && (
+                        <div>
+                          <p className="text-sm text-gray-600 mb-1">Citizen Photo</p>
+                          <img
+                            src={selectedAlert.citizenPhoto}
+                            alt="Citizen report"
+                            className="w-full h-32 object-cover rounded-lg"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Location</p>
+                        <p className="text-sm font-semibold">{selectedAlert.ward}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Coordinates</p>
+                        <p className="text-sm font-mono">{selectedAlert.lat.toFixed(4)}, {selectedAlert.lng.toFixed(4)}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-600 mb-1">Priority Score</p>
+                        <div className="flex items-center gap-2">
+                          <Progress value={selectedAlert.priorityScore} className="flex-1" />
+                          <span className="text-sm font-semibold">{selectedAlert.priorityScore}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-4 border-t">
+                        <Button className="w-full bg-[#2d7738] hover:bg-[#245d2d] mb-2">
+                          View on Map
+                        </Button>
+                        <Button variant="outline" className="w-full">
+                          Download Report
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </Card>
             ) : (
               <Card className="p-6 text-center text-gray-500">
@@ -286,6 +467,133 @@ export function OfficerDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Truck Assignment Modal */}
+      {isAssignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 text-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-800 overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/50">
+              <div className="flex items-center gap-3">
+                <div className="bg-[#2d7738]/20 p-2 rounded-lg">
+                  <Truck className="h-5 w-5 text-[#2d7738]" />
+                </div>
+                <h3 className="text-xl font-bold tracking-tight">Assign Nearest Truck</h3>
+              </div>
+              <button 
+                onClick={() => setIsAssignModalOpen(false)}
+                className="p-2 hover:bg-slate-800 rounded-full transition-colors"
+              >
+                <X className="h-5 w-5 text-slate-400" />
+              </button>
+            </div>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setIsSubmitting(true);
+              try {
+                const response = await fetch("http://127.0.0.1:5000/api/assignments", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(assignForm)
+                });
+                if (!response.ok) throw new Error("Assignment failed");
+                const assignmentResult = await response.json();
+                
+                setSuccessMessage("Truck assigned successfully!");
+                
+                // Update metrics and list
+                setAssignedToday(prev => prev + 1);
+
+                if (selectedAlert) {
+                   // Use consistent 127.0.0.1 for backend calls
+                   const routeRes = await fetch(`http://127.0.0.1:5000/api/route?start_lat=${selectedAlert.lat}&start_lng=${selectedAlert.lng}&end_lat=12.9716&end_lng=77.5946`);
+                   if (routeRes.ok) {
+                      const routeData = await routeRes.json();
+                      
+                      // State update order: set route then remove from list
+                      setActiveRoute(routeData);
+                      setRouteAssignedTo(selectedAlert.id);
+                      setActiveDumps(prev => prev.filter(d => d.id !== selectedAlert.id));
+                   }
+                }
+
+                setTimeout(() => {
+                  setSuccessMessage(null);
+                  setIsAssignModalOpen(false);
+                  setAssignForm({ source: "", destination: "", severity: "Medium" });
+                }, 2000);
+              } catch (err) {
+                console.error(err);
+                alert("Failed to assign truck. Please check backend.");
+              } finally {
+                setIsSubmitting(false);
+              }
+            }} className="p-6 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Source Location</label>
+                  <input
+                    required
+                    className="w-full bg-slate-800 border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-[#2d7738] outline-none transition-all placeholder:text-slate-500"
+                    placeholder="E.g. Central Hub"
+                    value={assignForm.source}
+                    onChange={(e) => setAssignForm({...assignForm, source: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Destination</label>
+                  <input
+                    required
+                    className="w-full bg-slate-800 border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-[#2d7738] outline-none transition-all"
+                    placeholder="E.g. Indiranagar"
+                    value={assignForm.destination}
+                    onChange={(e) => setAssignForm({...assignForm, destination: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-300">Severity Level</label>
+                  <select
+                    className="w-full bg-slate-800 border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-[#2d7738] outline-none transition-all appearance-none cursor-pointer"
+                    value={assignForm.severity}
+                    onChange={(e) => setAssignForm({...assignForm, severity: e.target.value})}
+                  >
+                    <option value="High">High Priority</option>
+                    <option value="Medium">Medium Priority</option>
+                    <option value="Low">Low Priority</option>
+                  </select>
+                </div>
+              </div>
+
+              {successMessage ? (
+                <div className="bg-green-500/10 border border-green-500/50 text-green-400 p-4 rounded-xl flex items-center gap-3 animate-in slide-in-from-bottom-2">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="text-sm font-semibold">{successMessage}</span>
+                </div>
+              ) : (
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white h-12 rounded-xl"
+                    onClick={() => setIsAssignModalOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 bg-[#2d7738] hover:bg-[#245d2d] text-white font-bold h-12 rounded-xl"
+                  >
+                    {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : "Deploy Truck"}
+                  </Button>
+                </div>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

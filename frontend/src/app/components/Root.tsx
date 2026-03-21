@@ -1,10 +1,22 @@
-import { Outlet, Link, useLocation } from "react-router";
-import { Map, Users, Truck, BarChart3, FileText, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { Outlet, Link, useLocation, useNavigate } from "react-router";
+import { Map, Users, Truck, BarChart3, FileText, Menu, X, LogIn, LogOut } from "lucide-react";
+import { useState, useEffect } from "react";
 
 export function Root() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem("token"));
+  }, [location]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setIsLoggedIn(false);
+    navigate("/login");
+  };
 
   const navigation = [
     { name: 'Map Dashboard', path: '/', icon: Map },
@@ -37,34 +49,56 @@ export function Root() {
               </div>
             </div>
 
-            {/* Desktop Navigation */}
-            <nav className="hidden lg:flex items-center gap-1">
-              {navigation.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                      isActive(item.path)
-                        ? 'bg-white/20 text-white'
-                        : 'text-green-100 hover:bg-white/10'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="text-sm">{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
+            <div className="flex items-center gap-4">
+              {/* Desktop Navigation */}
+              <nav className="hidden lg:flex items-center gap-1">
+                {navigation.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                        isActive(item.path)
+                          ? 'bg-white/20 text-white'
+                          : 'text-green-100 hover:bg-white/10'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="text-sm">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
+              <div className="h-6 w-px bg-white/20 hidden lg:block mx-2" />
+
+              {isLoggedIn ? (
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-green-100 hover:bg-white/10 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="text-sm hidden sm:inline">Logout</span>
+                </button>
+              ) : (
+                <Link
+                  to="/login"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-[#2d7738] font-semibold hover:bg-green-50 transition-colors"
+                >
+                  <LogIn className="h-4 w-4" />
+                  <span className="text-sm hidden sm:inline">Login</span>
+                </Link>
+              )}
+
+              {/* Mobile Menu Button */}
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="lg:hidden p-2 hover:bg-white/10 rounded-lg transition-colors"
+              >
+                {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              </button>
+            </div>
           </div>
 
           {/* Mobile Navigation */}

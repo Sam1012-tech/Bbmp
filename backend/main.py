@@ -1,0 +1,346 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional
+import random
+import requests
+
+app = FastAPI()
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For hackathon/MVP, allow all. In production, restrict to Vite's URL.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Models ---
+
+class Report(BaseModel):
+    lat: float
+    lng: float
+    ward: str
+    waste_type: str
+    description: Optional[str] = None
+    photo: Optional[str] = None
+
+class Waypoint(BaseModel):
+    lat: float
+    lng: float
+
+class RouteRequest(BaseModel):
+    waypoints: List[Waypoint]
+    optimize: bool = True
+
+class TruckAssignment(BaseModel):
+    source: str
+    destination: str
+    severity: str
+
+# --- Mock Data ---
+
+assignments_db = [] # In-memory storage for truck assignments
+
+dumpsites = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": 1,
+            "geometry": { "type": "Point", "coordinates": [77.6245, 12.9352] },
+            "properties": {
+                "id": "1",
+                "ward": "Indiranagar",
+                "severity": "high",
+                "status": "detected",
+                "description": "Large illegal dump site detected near 100 Feet Road",
+                "priorityScore": 95,
+                "reportedDate": "2026-03-01"
+            }
+        },
+        {
+            "type": "Feature",
+            "id": 2,
+            "geometry": { "type": "Point", "coordinates": [77.5946, 12.9716] },
+            "properties": {
+                "id": "2",
+                "ward": "Koramangala",
+                "severity": "medium",
+                "status": "pending",
+                "description": "Citizen reported waste accumulation",
+                "priorityScore": 72,
+                "reportedDate": "2026-02-28"
+            }
+        },
+        {
+            "type": "Feature",
+            "id": 3,
+            "geometry": { "type": "Point", "coordinates": [77.5970, 13.0358] },
+            "properties": {
+                "id": "3",
+                "ward": "Yelahanka",
+                "severity": "low",
+                "status": "cleaned",
+                "description": "Small dump site - cleaned successfully",
+                "priorityScore": 45,
+                "reportedDate": "2026-02-25",
+                "cleanedDate": "2026-02-27"
+            }
+        },
+        {
+            "type": "Feature",
+            "id": 4,
+            "geometry": { "type": "Point", "coordinates": [77.6450, 12.8988] },
+            "properties": {
+                "id": "4",
+                "ward": "Whitefield",
+                "severity": "high",
+                "status": "detected",
+                "description": "Large construction waste dump detected",
+                "priorityScore": 88,
+                "reportedDate": "2026-03-02"
+            }
+        }
+    ]
+}
+
+routes = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "T1",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [77.5946, 12.9716],
+                    [77.6245, 12.9352],
+                    [77.6411, 12.9141]
+                ]
+            },
+            "properties": {
+                "id": "T1",
+                "driverName": "Rajesh Kumar",
+                "vehicleNumber": "KA-01-AB-1234",
+                "progress": 65
+            }
+        },
+        {
+            "type": "Feature",
+            "id": "T2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [77.5970, 13.0358],
+                    [77.6450, 12.8988]
+                ]
+            },
+            "properties": {
+                "id": "T2",
+                "driverName": "Suresh Patil",
+                "vehicleNumber": "KA-01-CD-5678",
+                "progress": 45
+            }
+        }
+    ]
+}
+
+summary = {
+    "totalDumpsDetected": 156,
+    "activeDumps": 42,
+    "cleanedThisMonth": 114,
+    "avgCleanupTime": "18 hours",
+    "topPerformingWard": "Koramangala",
+    "worstPerformingWard": "Whitefield",
+    "detectionAccuracy": 94.5,
+    "citizenReports": 312
+}
+
+class Report(BaseModel):
+    lat: float
+    lng: float
+    ward: str
+    waste_type: str
+    description: Optional[str] = None
+    photo: Optional[str] = None
+
+class Waypoint(BaseModel):
+    lat: float
+    lng: float
+
+class RouteRequest(BaseModel):
+    waypoints: List[Waypoint]
+    optimize: bool = True
+
+# --- Endpoints ---
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Sky Swachh FastAPI Mock Backend",
+        "endpoints": {
+            "dumpsites": "/api/dumpsites",
+            "routes": "/api/routes",
+            "summary": "/api/summary"
+        }
+    }
+
+@app.get("/api/dumpsites")
+async def get_dumpsites():
+    return dumpsites
+
+@app.get("/api/routes")
+async def get_routes():
+    return routes
+
+@app.get("/api/summary")
+async def get_summary():
+    return summary
+
+@app.post("/api/reports")
+async def create_report(report: Report):
+    print(f"Received report: {report}")
+    new_id = f"CR-{random.randint(100000, 999999)}"
+    return {"id": new_id, "status": "success"}
+
+@app.post("/api/assignments")
+async def create_assignment(assignment: TruckAssignment):
+    print(f"Assigning truck: {assignment}")
+    new_id = f"TRK-{random.randint(1000, 9999)}"
+    # Convert Pydantic model to dict and add ID
+    assignment_data = assignment.dict()
+    assignment_data["id"] = new_id
+    assignments_db.append(assignment_data)
+    return assignment_data
+
+@app.get("/api/assignments")
+async def get_assignments():
+    return assignments_db
+
+@app.post("/api/optimize-route")
+async def optimize_route(req: RouteRequest):
+    """
+    Optimizes a route through waypoints using OSRM.
+    If optimize=True, uses /trip API for TSP optimization.
+    Otherwise uses /route API for fixed sequence.
+    """
+    if not req.waypoints or len(req.waypoints) < 2:
+        return {"error": "At least 2 waypoints are required"}
+
+    # Format coordinates for OSRM (lng,lat)
+    coords_str = ";".join([f"{w.lng},{w.lat}" for w in req.waypoints])
+    
+    # Use OSRM Public Demo Server
+    base_url = "https://router.project-osrm.org"
+    service = "trip" if req.optimize else "route"
+    
+    # For trip service: source=first means keep the first waypoint as start
+    params = "source=first&geometries=geojson&overview=full"
+    if not req.optimize:
+        params = "geometries=geojson&overview=full"
+
+    url = f"{base_url}/{service}/v1/driving/{coords_str}?{params}"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") != "Ok":
+            return {"error": f"OSRM Error: {data.get('code')}"}
+
+        # For trip, the geometry is in the 'trips' list
+        # For route, the geometry is in the 'routes' list
+        result_key = "trips" if req.optimize else "routes"
+        
+        if not data.get(result_key):
+             return {"error": "No route found"}
+
+        route_data = data[result_key][0]
+        
+        # OSRM Trip returns 'waypoints' with 'waypoint_index' mapping back to input
+        optimized_order = []
+        if req.optimize:
+            # Sort waypoints by their trip_index to get the visiting order
+            wps = sorted(data["waypoints"], key=lambda x: x["waypoint_index"])
+            # Actually OSRM trip returns waypoints in the order they appear in the result
+            # But we want to know which input index corresponds to which stop
+            optimized_order = [wp["waypoint_index"] for wp in data["waypoints"]]
+
+        return {
+            "geometry": route_data["geometry"], # GeoJSON LineString
+            "distance": route_data["distance"], # meters
+            "duration": route_data["duration"], # seconds
+            "optimized_order": optimized_order
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/geocode")
+async def geocode(q: str):
+    """
+    Geocodes a query string using Photon (OSM-based).
+    Restricted to Bengaluru area for better results.
+    """
+    if not q:
+        return []
+    
+    # Photon API with Bengaluru bounding box/center bias
+    # Lon: 77.5946, Lat: 12.9716 (Bengaluru)
+    url = f"https://photon.komoot.io/api/?q={q}&lon=77.59&lat=12.97&limit=5"
+    
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        
+        results = []
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            geom = feature.get("geometry", {})
+            
+            # Simple filtering/formatting
+            results.append({
+                "name": props.get("name", ""),
+                "street": props.get("street", ""),
+                "district": props.get("district", ""),
+                "city": props.get("city", ""),
+                "lat": geom.get("coordinates", [0, 0])[1],
+                "lng": geom.get("coordinates", [0, 0])[0],
+                "display_name": f"{props.get('name', '')}, {props.get('district', '') or props.get('city', '')}".strip(", ")
+            })
+        return results
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/route")
+async def get_simple_route(start_lat: float, start_lng: float, end_lat: float, end_lng: float):
+    """
+    Generates a simple A to B route using OSRM.
+    """
+    coords_str = f"{start_lng},{start_lat};{end_lng},{end_lat}"
+    url = f"https://router.project-osrm.org/route/v1/driving/{coords_str}?geometries=geojson&overview=full"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") != "Ok":
+            return {"error": f"OSRM Error: {data.get('code')}"}
+
+        route_data = data["routes"][0]
+        return {
+            "geometry": route_data["geometry"],
+            "distance": route_data["distance"],
+            "duration": route_data["duration"]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+if __name__ == "__main__":
+    import uvicorn
+    # Change host to 127.0.0.1 so the console shows a clickable local URL
+    uvicorn.run(app, host="127.0.0.1", port=5000)
