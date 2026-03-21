@@ -57,6 +57,7 @@ export interface GeocodeResult {
 export function MapDashboard() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
+  const polygonLayerRef = useRef<L.GeoJSON | null>(null);
   
   // State
   const [liveDumps, setLiveDumps] = useState<DumpSite[]>([]);
@@ -102,28 +103,39 @@ export function MapDashboard() {
     yellow: darkMode ? "#fbbf24" : "#d97706",
   };
 
+  const [dumpPolygons, setDumpPolygons] = useState<any>(null);
+  const [wasteProcessingUnits, setWasteProcessingUnits] = useState<any>(null);
+  const [dryWasteCentres, setDryWasteCentres] = useState<any>(null);
+
   // --- Initial Data Fetch ---
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dumpsRes, routesRes] = await Promise.all([
-          fetch("http://localhost:5000/api/dumpsites"),
-          fetch("http://localhost:5000/api/routes")
+        const [dumpsRes, routesRes, polygonsRes, wpcRes, dwcRes] = await Promise.all([
+          fetch("http://localhost:8000/api/dumpsites"),
+          fetch("http://localhost:8000/api/routes"),
+          fetch("http://localhost:8000/api/dump-polygons"),
+          fetch("http://localhost:8000/api/waste-processing-units"),
+          fetch("http://localhost:8000/api/dry-waste-centres"),
         ]);
 
-        if (!dumpsRes.ok || !routesRes.ok) {
-          throw new Error("Backend not responding correctly");
-        }
-
-        const dumpsGeoJson = await dumpsRes.json();
-        const routesGeoJson = await routesRes.json();
+        const dumpsGeoJson = dumpsRes.ok ? await dumpsRes.json() : { features: [] };
+        const routesGeoJson = routesRes.ok ? await routesRes.json() : { features: [] };
+        if (polygonsRes.ok) setDumpPolygons(await polygonsRes.json());
+        if (wpcRes.ok) setWasteProcessingUnits(await wpcRes.json());
+        if (dwcRes.ok) setDryWasteCentres(await dwcRes.json());
 
         // Map GeoJSON to our flat types
-        const sites: DumpSite[] = (dumpsGeoJson.features || []).map((f: any) => ({
-          ...f.properties,
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-        }));
+        const sites: DumpSite[] = (dumpsGeoJson.features || []).map((f: any) => {
+          const coords = f.geometry?.coordinates;
+          // geometry may be Point or MultiPolygon (for AI-detected sites)
+          const isPoint = f.geometry?.type === "Point";
+          return {
+            ...f.properties,
+            lat: isPoint ? coords[1] : f.properties.lat,
+            lng: isPoint ? coords[0] : f.properties.lng,
+          };
+        });
 
         const trucks: TruckRoute[] = (routesGeoJson.features || []).map((f: any) => ({
           id: f.properties.id,
@@ -138,6 +150,7 @@ export function MapDashboard() {
           stops: []
         }));
 
+        console.log("trucks loaded:", trucks.length, trucks);
         setLiveDumps(sites);
         setLiveTrucks(trucks);
         setIsError(false);
@@ -194,13 +207,32 @@ export function MapDashboard() {
   // Sync Markers and Overlays
   useEffect(() => {
     if (!mapInstance.current) return;
-    
+
     // Clear everything except Tiles
     mapInstance.current.eachLayer((layer) => {
-      if (layer instanceof L.CircleMarker || layer instanceof L.Marker || layer instanceof L.Polyline) {
+      if (layer instanceof L.CircleMarker || layer instanceof L.Marker || layer instanceof L.Polyline || layer instanceof L.Polygon) {
         layer.remove();
       }
     });
+
+    // Add AI-detected dump site polygons — use ref to avoid stacking
+    if (polygonLayerRef.current) {
+      polygonLayerRef.current.remove();
+      polygonLayerRef.current = null;
+    }
+    if (dumpPolygons?.features) {
+      polygonLayerRef.current = L.geoJSON(dumpPolygons, {
+        style: {
+          color: "#dc2626",
+          fillColor: "#dc2626",
+          fillOpacity: 0.35,
+          weight: 2,
+        },
+        onEachFeature: (feature, layer) => {
+          layer.bindTooltip(`<b>AI Detected Dump Site</b><br/>ID: ${feature.properties.id}<br/>Confidence: ${feature.properties.confidence}`);
+        }
+      }).addTo(mapInstance.current!);
+    }
 
     // Add Dump Sites
     if (Array.isArray(liveDumps)) {
@@ -221,6 +253,36 @@ export function MapDashboard() {
           L.DomEvent.stopPropagation(e);
           setSelectedSite(site);
         });
+      });
+    }
+
+    // Waste Processing Units — purple squares
+    if (wasteProcessingUnits?.features) {
+      wasteProcessingUnits.features.forEach((f: any) => {
+        const [lng, lat] = f.geometry.coordinates;
+        L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="background:#7c3aed;width:14px;height:14px;border:2px solid white;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,0.4)" title="Waste Processing Unit"></div>`,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7]
+          })
+        }).addTo(mapInstance.current!).bindTooltip('Waste Processing Unit');
+      });
+    }
+
+    // Dry Waste Collection Centres — orange diamonds
+    if (dryWasteCentres?.features) {
+      dryWasteCentres.features.forEach((f: any) => {
+        const [lng, lat] = f.geometry.coordinates;
+        L.marker([lat, lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="background:#f97316;width:12px;height:12px;border:2px solid white;border-radius:2px;transform:rotate(45deg);box-shadow:0 1px 3px rgba(0,0,0,0.4)" title="Dry Waste Centre"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          })
+        }).addTo(mapInstance.current!).bindTooltip('Dry Waste Collection Centre');
       });
     }
 
@@ -310,7 +372,7 @@ export function MapDashboard() {
       }).addTo(mapInstance.current!);
     }
 
-  }, [liveDumps, liveTrucks, layers, activeRoute, sourcePoint, destPoint, reportClick, reportMode, reportSubmitted]);
+  }, [liveDumps, liveTrucks, dumpPolygons, wasteProcessingUnits, dryWasteCentres, layers, activeRoute, sourcePoint, destPoint, reportClick, reportMode, reportSubmitted]);
 
   // --- Handlers ---
   const handleMapClickInternal = (e: L.LeafletMouseEvent) => {
@@ -333,7 +395,7 @@ export function MapDashboard() {
   const handleGeocode = async (q: string, type: "source" | "dest") => {
     if (q.length < 3) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/geocode?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`http://localhost:8000/api/geocode?q=${encodeURIComponent(q)}`);
       if (res.ok) {
         const data = await res.json();
         if (type === "source") setSourceSuggestions(data);
@@ -346,7 +408,7 @@ export function MapDashboard() {
 
   const handleCalculateRoute = async (s: GeocodeResult, d: GeocodeResult) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/route?start_lat=${s.lat}&start_lng=${s.lng}&end_lat=${d.lat}&end_lng=${d.lng}`);
+      const res = await fetch(`http://localhost:8000/api/route?start_lat=${s.lat}&start_lng=${s.lng}&end_lat=${d.lat}&end_lng=${d.lng}`);
       if (res.ok) {
         const data = await res.json();
         setActiveRoute(data);
@@ -365,14 +427,24 @@ export function MapDashboard() {
     try {
       const truck = liveTrucks.find(t => t.id === truckId);
       if (!truck) return;
-      
-      const targets = liveDumps.filter(d => d.status !== "cleaned" && d.severity === "high");
+
+      // Use all active (non-cleaned) dump sites as targets, fall back to medium if no high
+      const highTargets = liveDumps.filter(d => d.status !== "cleaned" && d.severity === "high");
+      const targets = highTargets.length > 0
+        ? highTargets
+        : liveDumps.filter(d => d.status !== "cleaned");
+
+      if (targets.length === 0) {
+        alert("No active dump sites to route through.");
+        return;
+      }
+
       const waypoints = [
         { lat: truck.currentLocation.lat, lng: truck.currentLocation.lng },
         ...targets.map(t => ({ lat: t.lat, lng: t.lng }))
       ];
 
-      const res = await fetch(`http://localhost:5000/api/optimize-route`, {
+      const res = await fetch(`http://localhost:8000/api/optimize-route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ waypoints, optimize: true })
@@ -380,13 +452,19 @@ export function MapDashboard() {
 
       if (res.ok) {
         const data = await res.json();
+        if (data.error) {
+          console.error("OSRM error:", data.error);
+          alert(`Route optimization failed: ${data.error}`);
+          return;
+        }
         setActiveRoute(data);
         if (mapInstance.current && data.geometry) {
-           mapInstance.current.fitBounds(L.geoJSON(data.geometry).getBounds(), { padding: [50, 50] });
+          mapInstance.current.fitBounds(L.geoJSON(data.geometry).getBounds(), { padding: [50, 50] });
         }
       }
     } catch (e) {
       console.error(e);
+      alert("Could not reach route optimization service.");
     } finally {
       setIsOptimizing(false);
     }

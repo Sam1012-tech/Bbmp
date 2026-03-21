@@ -1,1 +1,62 @@
-[]
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 1,
+      "geometry": { "type": "Point", "coordinates": [77.6245, 12.9352] },
+      "properties": {
+        "id": "1",
+        "ward": "Indiranagar",
+        "severity": "high",
+        "status": "detected",
+        "description": "Large illegal dump site detected near 100 Feet Road",
+        "priorityScore": 95,
+        "reportedDate": "2026-03-01"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 2,
+      "geometry": { "type": "Point", "coordinates": [77.5946, 12.9716] },
+      "properties": {
+        "id": "2",
+        "ward": "Koramangala",
+        "severity": "medium",
+        "status": "pending",
+        "description": "Citizen reported waste accumulation",
+        "priorityScore": 72,
+        "reportedDate": "2026-02-28"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 3,
+      "geometry": { "type": "Point", "coordinates": [77.5970, 13.0358] },
+      "properties": {
+        "id": "3",
+        "ward": "Yelahanka",
+        "severity": "low",
+        "status": "cleaned",
+        "description": "Small dump site - cleaned successfully",
+        "priorityScore": 45,
+        "reportedDate": "2026-02-25",
+        "cleanedDate": "2026-02-27"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 4,
+      "geometry": { "type": "Point", "coordinates": [77.6450, 12.8988] },
+      "properties": {
+        "id": "4",
+        "ward": "Whitefield",
+        "severity": "high",
+        "status": "detected",
+        "description": "Large construction waste dump detected",
+        "priorityScore": 88,
+        "reportedDate": "2026-03-02"
+      }
+    }
+  ]
+}

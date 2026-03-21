@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "ward_name": "Indiranagar",
+    "total_dumps": 3,
+    "high_severity": 1,
+    "medium_severity": 2,
+    "total_fine": 120000,
+    "avg_response_time_hrs": 36
+  }
+]

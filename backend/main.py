@@ -4,6 +4,34 @@ from pydantic import BaseModel
 from typing import List, Optional
 import random
 import requests
+import json
+import os
+from pathlib import Path
+
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+DATA_DIR = Path(__file__).parent / "data"
+
+# --- Firebase Init ---
+# Set GOOGLE_APPLICATION_CREDENTIALS env var to your serviceAccount.json path,
+# OR place serviceAccount.json in the backend folder.
+_sa_path = Path(__file__).parent / "serviceAccount.json"
+if not firebase_admin._apps:
+    if _sa_path.exists():
+        cred = credentials.Certificate(str(_sa_path))
+        firebase_admin.initialize_app(cred)
+    elif os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        firebase_admin.initialize_app()
+    else:
+        firebase_admin.initialize_app()  # will fail gracefully; fallback to JSON below
+
+try:
+    db = firestore.client()
+    USE_FIRESTORE = True
+except Exception:
+    db = None
+    USE_FIRESTORE = False
 
 app = FastAPI()
 
@@ -39,72 +67,21 @@ class TruckAssignment(BaseModel):
     destination: str
     severity: str
 
-# --- Mock Data ---
+# --- Fallback JSON data (used when Firestore is unavailable) ---
 
-assignments_db = [] # In-memory storage for truck assignments
+assignments_db = []
 
-dumpsites = {
-    "type": "FeatureCollection",
-    "features": [
-        {
-            "type": "Feature",
-            "id": 1,
-            "geometry": { "type": "Point", "coordinates": [77.6245, 12.9352] },
-            "properties": {
-                "id": "1",
-                "ward": "Indiranagar",
-                "severity": "high",
-                "status": "detected",
-                "description": "Large illegal dump site detected near 100 Feet Road",
-                "priorityScore": 95,
-                "reportedDate": "2026-03-01"
-            }
-        },
-        {
-            "type": "Feature",
-            "id": 2,
-            "geometry": { "type": "Point", "coordinates": [77.5946, 12.9716] },
-            "properties": {
-                "id": "2",
-                "ward": "Koramangala",
-                "severity": "medium",
-                "status": "pending",
-                "description": "Citizen reported waste accumulation",
-                "priorityScore": 72,
-                "reportedDate": "2026-02-28"
-            }
-        },
-        {
-            "type": "Feature",
-            "id": 3,
-            "geometry": { "type": "Point", "coordinates": [77.5970, 13.0358] },
-            "properties": {
-                "id": "3",
-                "ward": "Yelahanka",
-                "severity": "low",
-                "status": "cleaned",
-                "description": "Small dump site - cleaned successfully",
-                "priorityScore": 45,
-                "reportedDate": "2026-02-25",
-                "cleanedDate": "2026-02-27"
-            }
-        },
-        {
-            "type": "Feature",
-            "id": 4,
-            "geometry": { "type": "Point", "coordinates": [77.6450, 12.8988] },
-            "properties": {
-                "id": "4",
-                "ward": "Whitefield",
-                "severity": "high",
-                "status": "detected",
-                "description": "Large construction waste dump detected",
-                "priorityScore": 88,
-                "reportedDate": "2026-03-02"
-            }
-        }
-    ]
-}
+with open(DATA_DIR / "dump_sites.json") as f:
+    _fallback_dumpsites = json.load(f)
+
+with open(DATA_DIR / "training_polygons.geojson") as f:
+    _training_polygons = json.load(f)
+
+with open(DATA_DIR / "waste_processing_units.json") as f:
+    _waste_processing_units = json.load(f)
+
+with open(DATA_DIR / "dry_waste_centres.json") as f:
+    _dry_waste_centres = json.load(f)
 
 routes = {
     "type": "FeatureCollection",
@@ -189,7 +166,52 @@ async def root():
 
 @app.get("/api/dumpsites")
 async def get_dumpsites():
-    return dumpsites
+    if USE_FIRESTORE:
+        try:
+            docs = db.collection("dump_sites").stream()
+            features = []
+            for doc in docs:
+                d = doc.to_dict()
+                features.append({
+                    "type": "Feature",
+                    "id": doc.id,
+                    "geometry": json.loads(d["geometry"]) if isinstance(d.get("geometry"), str) else (d.get("geometry") or {"type": "Point", "coordinates": [d["lng"], d["lat"]]}),
+                    "properties": {
+                        "id": doc.id,
+                        "ward": d.get("ward", ""),
+                        "severity": d.get("severity", "medium"),
+                        "status": d.get("status", "detected"),
+                        "description": d.get("description", ""),
+                        "priorityScore": d.get("priorityScore", 50),
+                        "reportedDate": str(d.get("reportedDate", "")),
+                        "source": d.get("source", "manual"),
+                        "lat": d.get("lat"),
+                        "lng": d.get("lng"),
+                    }
+                })
+            return {"type": "FeatureCollection", "features": features}
+        except Exception as e:
+            print(f"Firestore error, falling back to JSON: {e}")
+            return _fallback_dumpsites
+    return _fallback_dumpsites
+
+
+@app.get("/api/dump-polygons")
+async def get_dump_polygons():
+    """Returns only dump_site polygons from the training GeoJSON for map overlay."""
+    dump_features = [
+        f for f in _training_polygons["features"]
+        if f["properties"]["class_name"] == "dump_site"
+    ]
+    return {"type": "FeatureCollection", "features": dump_features}
+
+@app.get("/api/waste-processing-units")
+async def get_waste_processing_units():
+    return _waste_processing_units
+
+@app.get("/api/dry-waste-centres")
+async def get_dry_waste_centres():
+    return _dry_waste_centres
 
 @app.get("/api/routes")
 async def get_routes():
@@ -201,8 +223,25 @@ async def get_summary():
 
 @app.post("/api/reports")
 async def create_report(report: Report):
-    print(f"Received report: {report}")
     new_id = f"CR-{random.randint(100000, 999999)}"
+    doc = {
+        "id": new_id,
+        "lat": report.lat,
+        "lng": report.lng,
+        "ward": report.ward,
+        "waste_type": report.waste_type,
+        "description": report.description,
+        "photo": report.photo,
+        "status": "pending",
+        "source": "citizen_report",
+        "severity": "medium",
+        "priorityScore": 60,
+        "geometry": {"type": "Point", "coordinates": [report.lng, report.lat]},
+        "reportedDate": firestore.SERVER_TIMESTAMP if USE_FIRESTORE else None,
+    }
+    if USE_FIRESTORE:
+        db.collection("dump_sites").document(new_id).set(doc)
+    print(f"New citizen report saved: {new_id}")
     return {"id": new_id, "status": "success"}
 
 @app.post("/api/assignments")
@@ -343,4 +382,4 @@ async def get_simple_route(start_lat: float, start_lng: float, end_lat: float, e
 if __name__ == "__main__":
     import uvicorn
     # Change host to 127.0.0.1 so the console shows a clickable local URL
-    uvicorn.run(app, host="127.0.0.1", port=5000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

@@ -1,2 +1,4 @@
-flask
-flask-cors
+fastapi
+uvicorn[standard]
+requests
+firebase-admin

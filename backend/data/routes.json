@@ -1,1 +1,24 @@
-[]
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.5946, 12.9716],
+          [77.6012, 12.9823],
+          [77.6100, 12.9900]
+        ]
+      },
+      "properties": {
+        "route_id": 1,
+        "from": "Dump Site 1",
+        "to": "Recycling Center North",
+        "distance_km": 4.2,
+        "time_min": 12,
+        "waste_type": "recyclable"
+      }
+    }
+  ]
+}

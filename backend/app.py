@@ -1,11 +1,16 @@
-from flask import Flask, jsonify
-from flask_cors import CORS
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import json
 
-app = Flask(__name__)
-CORS(app)  # Allow React frontend to access
+app = FastAPI(title="Sky Swachh API", version="1.0.0")
 
-# Load data generated from satellite detection
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 with open('data/dump_sites.json') as f:
     dump_sites = json.load(f)
 
@@ -15,20 +20,16 @@ with open('data/routes.json') as f:
 with open('data/ward_stats.json') as f:
     ward_stats = json.load(f)
 
-@app.route('/dump-sites', methods=['GET'])
+@app.get("/dump-sites", summary="Get all detected illegal dump sites")
 def get_dump_sites():
-    """Returns all detected illegal dump sites"""
-    return jsonify(dump_sites)
+    return dump_sites
 
-@app.route('/routes', methods=['GET'])
+
+@app.get("/routes", summary="Get optimized collection routes")
 def get_routes():
-    """Returns optimized collection routes"""
-    return jsonify(routes)
+    return routes
 
-@app.route('/ward-stats', methods=['GET'])
+
+@app.get("/ward-stats", summary="Get ward-wise violation statistics")
 def get_ward_stats():
-    """Returns ward-wise violation statistics"""
-    return jsonify(ward_stats)
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    return ward_stats

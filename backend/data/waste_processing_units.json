@@ -1,0 +1,14 @@
+{
+"type": "FeatureCollection",
+"name": "wasteprocessingunit",
+"features": [
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.441004, 12.97386 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.444193, 12.968195 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.479684, 13.031319 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.430853, 12.882866 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.506767, 12.875929 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.649861, 12.896044 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.686032, 12.857962 ] } },
+{ "type": "Feature", "properties": { "name": "Waste Processing Unit" }, "geometry": { "type": "Point", "coordinates": [ 77.540021, 13.122286 ] } }
+]
+}
