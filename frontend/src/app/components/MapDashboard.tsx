@@ -35,6 +35,7 @@ import { motion, AnimatePresence } from "motion/react";
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { type DumpSite, type TruckRoute } from "../data/mockData";
+import { api } from "../services/api";
 import { Button } from "./ui/button";
 
 // Fix Leaflet marker icons
@@ -81,6 +82,8 @@ export function MapDashboard() {
   const [destPoint, setDestPoint] = useState<GeocodeResult | null>(null);
   const [activeRoute, setActiveRoute] = useState<any>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [animatedTruck, setAnimatedTruck] = useState<{lat: number, lng: number, id: string} | null>(null);
+  const [truckStatus, setTruckStatus] = useState<string>("Idle");
 
   const [layers, setLayers] = useState({
     zones: true,
@@ -286,12 +289,26 @@ export function MapDashboard() {
       });
     }
 
-    // Add Trucks
+    // Add Animated Truck
+    if (animatedTruck) {
+      const icon = L.divIcon({
+        className: 'truck-icon',
+        html: `<div style="background-color: #2d7738; width: 30px; height: 30px; border-radius: 50%; border: 3px solid white; display: flex; align-items: center; justify-content: center; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.4); animation: pulse 2s infinite;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></div>`,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15]
+      });
+
+      L.marker([animatedTruck.lat, animatedTruck.lng], { icon })
+        .addTo(mapInstance.current!)
+        .bindPopup(`Truck ${animatedTruck.id}<br/>Status: ${truckStatus}`);
+    }
+
+    // Add Trucks from backend (if any)
     if (Array.isArray(liveTrucks)) {
       liveTrucks.forEach(truck => {
         const icon = L.divIcon({
           className: 'truck-icon',
-          html: `<div style="background-color: ${truck.id === 'T1' ? '#2d7738' : '#7c3aed'}; width: 26px; height: 26px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${truck.id}</div>`,
+          html: `<div style="background-color: #7c3aed; width: 26px; height: 26px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${truck.id}</div>`,
           iconSize: [26, 26],
           iconAnchor: [13, 13]
         });
@@ -299,15 +316,6 @@ export function MapDashboard() {
         L.marker([truck.currentLocation.lat, truck.currentLocation.lng], { icon })
           .addTo(mapInstance.current!)
           .bindPopup(`Truck ${truck.id}<br/>Driver: ${truck.driverName}`);
-          
-        if (truck.route) {
-          L.polyline(truck.route.map((p: any) => [p.lat, p.lng]), {
-            color: truck.id === 'T1' ? '#2d7738' : '#7c3aed',
-            dashArray: '10, 5',
-            opacity: 0.4,
-            weight: 3
-          }).addTo(mapInstance.current!);
-        }
       });
     }
 
@@ -419,6 +427,60 @@ export function MapDashboard() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDispatchTruck = async () => {
+    if (!selectedSite) return;
+    
+    setIsLoading(true);
+    setTruckStatus("Planning Route...");
+    try {
+      const data = await api.getLogisticsRoute(selectedSite.lat, selectedSite.lng);
+      if (data.error) throw new Error(data.error);
+
+      setActiveRoute(data);
+      if (mapInstance.current && data.geometry) {
+        mapInstance.current.fitBounds(L.geoJSON(data.geometry).getBounds(), { padding: [50, 50] });
+      }
+
+      // Start Animation
+      const coords = data.geometry.coordinates; // [[lng, lat], ...]
+      const truckId = `TRK-${Math.floor(Math.random() * 9000) + 1000}`;
+      
+      let step = 0;
+      const totalSteps = coords.length;
+      setTruckStatus("Assigned");
+
+      const animate = () => {
+        if (step >= totalSteps) {
+          setTruckStatus("Completed");
+          // Mark site as cleaned in local state
+          setLiveDumps(prev => prev.map(s => s.id === selectedSite.id ? {...s, status: 'cleaned'} : s));
+          setTimeout(() => setSelectedSite(null), 3000);
+          return;
+        }
+
+        const [lng, lat] = coords[step];
+        setAnimatedTruck({ lat, lng, id: truckId });
+        
+        // Dynamic status based on progress
+        const progress = (step / totalSteps) * 100;
+        if (progress < 30) setTruckStatus("En Route to Dump");
+        else if (progress < 60) setTruckStatus("Transporting to Collection Centre");
+        else setTruckStatus("Final Leg to Processing Unit");
+
+        step++;
+        requestAnimationFrame(() => setTimeout(animate, 50)); // ~20fps for visible movement
+      };
+
+      animate();
+
+    } catch (e) {
+      console.error(e);
+      alert("Dispatch failed: " + (e as Error).message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -735,6 +797,14 @@ export function MapDashboard() {
                                <span className={site.severity === 'high' ? 'text-red-500' : 'text-orange-500'}>{site.severity}</span>
                             </div>
                             <div className="text-[10px] text-gray-500">{site.description}</div>
+                            {selectedSite?.id === site.id && truckStatus !== "Idle" && (
+                               <div className="mt-1.5 flex items-center gap-2">
+                                  <div className="h-1 flex-1 bg-gray-200 rounded-full overflow-hidden">
+                                     <div className="h-full bg-green-500 animate-pulse" style={{ width: truckStatus === "Completed" ? "100%" : "50%" }}></div>
+                                  </div>
+                                  <span className="text-[9px] font-bold text-green-600 uppercase">{truckStatus}</span>
+                               </div>
+                            )}
                          </div>
                        ))}
                     </div>
@@ -762,7 +832,15 @@ export function MapDashboard() {
                     <span className="text-[10px] text-gray-500">Score: {selectedSite.priorityScore}</span>
                  </div>
                  <p className="text-xs text-gray-700">{selectedSite.description}</p>
-                 <Button className="w-full bg-[#2d7738] h-8 text-xs" onClick={() => alert("Truck Dispatched!")}>Dispatch Truck</Button>
+                                   <Button 
+                    className="w-full bg-[#2d7738] h-10 text-xs font-bold transition-all shadow-md active:scale-95" 
+                    onClick={handleDispatchTruck}
+                    disabled={truckStatus !== "Idle" && truckStatus !== "Completed"}
+                  >
+                    <Truck className="h-4 w-4 mr-2" />
+                    {truckStatus === "Idle" || truckStatus === "Completed" ? "Dispatch Logistics Truck" : truckStatus}
+                  </Button>
+
               </div>
             </motion.div>
           )}

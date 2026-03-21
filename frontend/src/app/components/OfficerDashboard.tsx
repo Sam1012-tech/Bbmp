@@ -89,26 +89,26 @@ export function OfficerDashboard() {
       const map = L.map(mapRef.current!).setView([12.9716, 77.5946], 13);
       mapInstance.current = map;
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
-        attribution: '&copy; OpenStreetMap contributors' 
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
       if (activeRoute.geometry) {
-        const polyline = L.polyline(activeRoute.geometry.coordinates.map((c: any) => [c[1], c[0]]), { 
-          color: '#3b82f6', 
-          weight: 5, 
-          opacity: 0.7 
+        const polyline = L.polyline(activeRoute.geometry.coordinates.map((c: any) => [c[1], c[0]]), {
+          color: '#3b82f6',
+          weight: 5,
+          opacity: 0.7
         }).addTo(map);
 
         if (selectedAlert) {
-           L.marker([selectedAlert.lat, selectedAlert.lng], {
-             icon: L.icon({
-               iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-               shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-               iconSize: [25, 41],
-               iconAnchor: [12, 41]
-             })
-           }).addTo(map).bindPopup("Waste Pickup Point");
+          L.marker([selectedAlert.lat, selectedAlert.lng], {
+            icon: L.icon({
+              iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+              shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+              iconSize: [25, 41],
+              iconAnchor: [12, 41]
+            })
+          }).addTo(map).bindPopup("Waste Pickup Point");
         }
 
         L.marker([12.9716, 77.5946], {
@@ -255,9 +255,8 @@ export function OfficerDashboard() {
                   return (
                     <Card
                       key={dump.id}
-                      className={`p-4 cursor-pointer transition-all hover:shadow-md ${
-                        selectedAlert?.id === dump.id ? 'ring-2 ring-[#2d7738]' : ''
-                      }`}
+                      className={`p-4 cursor-pointer transition-all hover:shadow-md ${selectedAlert?.id === dump.id ? 'ring-2 ring-[#2d7738]' : ''
+                        }`}
                       onClick={() => setSelectedAlert(dump)}
                     >
                       <div className="flex items-start gap-4">
@@ -366,47 +365,47 @@ export function OfficerDashboard() {
                       </h2>
                       <Badge className="bg-green-100 text-green-700">En Route</Badge>
                     </div>
-                    
-                    <div 
-                      ref={mapRef} 
-                      className="w-full h-80 rounded-xl overflow-hidden border-2 border-slate-100 shadow-inner z-0" 
+
+                    <div
+                      ref={mapRef}
+                      className="w-full h-80 rounded-xl overflow-hidden border-2 border-slate-100 shadow-inner z-0"
                     />
 
                     <div className="bg-slate-50 p-4 rounded-xl space-y-3">
-                       <div className="flex items-center gap-3">
-                          <div className="w-2 h-2 rounded-full bg-red-500" />
-                          <div className="text-xs">
-                             <p className="text-gray-500">Pickup Point</p>
-                             <p className="font-semibold">{selectedAlert.ward}</p>
-                          </div>
-                       </div>
-                       <div className="flex items-center gap-3">
-                          <div className="w-2 h-2 rounded-full bg-green-500" />
-                          <div className="text-xs">
-                             <p className="text-gray-500">Destination</p>
-                             <p className="font-semibold">Central Processing Center</p>
-                          </div>
-                       </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-red-500" />
+                        <div className="text-xs">
+                          <p className="text-gray-500">Pickup Point</p>
+                          <p className="font-semibold">{selectedAlert.ward}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 rounded-full bg-green-500" />
+                        <div className="text-xs">
+                          <p className="text-gray-500">Destination</p>
+                          <p className="font-semibold">Central Processing Center</p>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="pt-2">
-                       <Button 
-                         variant="outline" 
-                         className="w-full border-red-200 text-red-600 hover:bg-red-50 h-10"
-                         onClick={() => {
-                            setActiveRoute(null);
-                            setRouteAssignedTo(null);
-                            setSelectedAlert(null);
-                         }}
-                       >
-                         Close Tracking
-                       </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full border-red-200 text-red-600 hover:bg-red-50 h-10"
+                        onClick={() => {
+                          setActiveRoute(null);
+                          setRouteAssignedTo(null);
+                          setSelectedAlert(null);
+                        }}
+                      >
+                        Close Tracking
+                      </Button>
                     </div>
                   </div>
                 ) : (
                   <>
                     <h2 className="font-semibold mb-4">Alert Details</h2>
-                    
+
                     <div className="space-y-4">
                       <div>
                         <p className="text-sm text-gray-600 mb-1">Satellite Image</p>
@@ -479,7 +478,7 @@ export function OfficerDashboard() {
                 </div>
                 <h3 className="text-xl font-bold tracking-tight">Assign Nearest Truck</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setIsAssignModalOpen(false)}
                 className="p-2 hover:bg-slate-800 rounded-full transition-colors"
               >
@@ -491,30 +490,30 @@ export function OfficerDashboard() {
               e.preventDefault();
               setIsSubmitting(true);
               try {
-                const response = await fetch("http://127.0.0.1:5000/api/assignments", {
+                const response = await fetch("http://127.0.0.1:8000/api/assignments", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify(assignForm)
                 });
                 if (!response.ok) throw new Error("Assignment failed");
                 const assignmentResult = await response.json();
-                
+
                 setSuccessMessage("Truck assigned successfully!");
-                
+
                 // Update metrics and list
                 setAssignedToday(prev => prev + 1);
 
                 if (selectedAlert) {
-                   // Use consistent 127.0.0.1 for backend calls
-                   const routeRes = await fetch(`http://127.0.0.1:5000/api/route?start_lat=${selectedAlert.lat}&start_lng=${selectedAlert.lng}&end_lat=12.9716&end_lng=77.5946`);
-                   if (routeRes.ok) {
-                      const routeData = await routeRes.json();
-                      
-                      // State update order: set route then remove from list
-                      setActiveRoute(routeData);
-                      setRouteAssignedTo(selectedAlert.id);
-                      setActiveDumps(prev => prev.filter(d => d.id !== selectedAlert.id));
-                   }
+                  // Use consistent 127.0.0.1 for backend calls
+                  const routeRes = await fetch(`http://127.0.0.1:8000/api/route?start_lat=${selectedAlert.lat}&start_lng=${selectedAlert.lng}&end_lat=12.9716&end_lng=77.5946`);
+                  if (routeRes.ok) {
+                    const routeData = await routeRes.json();
+
+                    // State update order: set route then remove from list
+                    setActiveRoute(routeData);
+                    setRouteAssignedTo(selectedAlert.id);
+                    setActiveDumps(prev => prev.filter(d => d.id !== selectedAlert.id));
+                  }
                 }
 
                 setTimeout(() => {
@@ -537,7 +536,7 @@ export function OfficerDashboard() {
                     className="w-full bg-slate-800 border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-[#2d7738] outline-none transition-all placeholder:text-slate-500"
                     placeholder="E.g. Central Hub"
                     value={assignForm.source}
-                    onChange={(e) => setAssignForm({...assignForm, source: e.target.value})}
+                    onChange={(e) => setAssignForm({ ...assignForm, source: e.target.value })}
                   />
                 </div>
 
@@ -548,7 +547,7 @@ export function OfficerDashboard() {
                     className="w-full bg-slate-800 border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-[#2d7738] outline-none transition-all"
                     placeholder="E.g. Indiranagar"
                     value={assignForm.destination}
-                    onChange={(e) => setAssignForm({...assignForm, destination: e.target.value})}
+                    onChange={(e) => setAssignForm({ ...assignForm, destination: e.target.value })}
                   />
                 </div>
 
@@ -557,7 +556,7 @@ export function OfficerDashboard() {
                   <select
                     className="w-full bg-slate-800 border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-[#2d7738] outline-none transition-all appearance-none cursor-pointer"
                     value={assignForm.severity}
-                    onChange={(e) => setAssignForm({...assignForm, severity: e.target.value})}
+                    onChange={(e) => setAssignForm({ ...assignForm, severity: e.target.value })}
                   >
                     <option value="High">High Priority</option>
                     <option value="Medium">Medium Priority</option>

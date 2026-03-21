@@ -85,43 +85,7 @@ with open(DATA_DIR / "dry_waste_centres.json") as f:
 
 routes = {
     "type": "FeatureCollection",
-    "features": [
-        {
-            "type": "Feature",
-            "id": "T1",
-            "geometry": {
-                "type": "LineString",
-                "coordinates": [
-                    [77.5946, 12.9716],
-                    [77.6245, 12.9352],
-                    [77.6411, 12.9141]
-                ]
-            },
-            "properties": {
-                "id": "T1",
-                "driverName": "Rajesh Kumar",
-                "vehicleNumber": "KA-01-AB-1234",
-                "progress": 65
-            }
-        },
-        {
-            "type": "Feature",
-            "id": "T2",
-            "geometry": {
-                "type": "LineString",
-                "coordinates": [
-                    [77.5970, 13.0358],
-                    [77.6450, 12.8988]
-                ]
-            },
-            "properties": {
-                "id": "T2",
-                "driverName": "Suresh Patil",
-                "vehicleNumber": "KA-01-CD-5678",
-                "progress": 45
-            }
-        }
-    ]
+    "features": []
 }
 
 summary = {
@@ -414,6 +378,72 @@ async def get_simple_route(start_lat: float, start_lng: float, end_lat: float, e
             "geometry": route_data["geometry"],
             "distance": route_data["distance"],
             "duration": route_data["duration"]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/logistics-route")
+async def get_logistics_route(start_lat: float, start_lng: float):
+    """
+    Generates a route: Dump Site -> Nearest DWCC -> Nearest WPU.
+    """
+    import math
+
+    def distance(lat1, lon1, lat2, lon2):
+        return math.sqrt((lat1 - lat2)**2 + (lon1 - lon2)**2)
+
+    # 1. Find nearest DWCC (Orange)
+    nearest_dwcc = None
+    min_dwcc_dist = float('inf')
+    for f in _dry_waste_centres.get("features", []):
+        coords = f["geometry"]["coordinates"]
+        d = distance(start_lat, start_lng, coords[1], coords[0])
+        if d < min_dwcc_dist:
+            min_dwcc_dist = d
+            nearest_dwcc = coords
+
+    # 2. Find nearest WPU (Purple) from the DWCC
+    nearest_wpu = None
+    min_wpu_dist = float('inf')
+    search_origin = nearest_dwcc if nearest_dwcc else [start_lng, start_lat]
+    for f in _waste_processing_units.get("features", []):
+        coords = f["geometry"]["coordinates"]
+        d = distance(search_origin[1], search_origin[0], coords[1], coords[0])
+        if d < min_wpu_dist:
+            min_wpu_dist = d
+            nearest_wpu = coords
+
+    if not nearest_dwcc or not nearest_wpu:
+         return {"error": "Could not find collection centres or processing units"}
+
+    # 3. Build multi-stop route sequence: Start -> DWCC -> WPU
+    waypoints = [
+        f"{start_lng},{start_lat}",
+        f"{nearest_dwcc[0]},{nearest_dwcc[1]}",
+        f"{nearest_wpu[0]},{nearest_wpu[1]}"
+    ]
+    
+    coords_str = ";".join(waypoints)
+    url = f"https://router.project-osrm.org/route/v1/driving/{coords_str}?geometries=geojson&overview=full"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("code") != "Ok":
+            return {"error": f"OSRM Error: {data.get('code')}"}
+
+        route_data = data["routes"][0]
+        return {
+            "geometry": route_data["geometry"],
+            "distance": route_data["distance"],
+            "duration": route_data["duration"],
+            "stops": {
+                "pickup": [start_lng, start_lat],
+                "dwcc": nearest_dwcc,
+                "wpu": nearest_wpu
+            }
         }
     except Exception as e:
         return {"error": str(e)}

@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "http://localhost:8000/api";
 
 export const api = {
   async signup(data: any) {
@@ -53,6 +53,12 @@ export const api = {
   async getRoute(start: { lat: number, lng: number }, end: { lat: number, lng: number }) {
     const response = await fetch(`${API_BASE_URL}/route?start_lat=${start.lat}&start_lng=${start.lng}&end_lat=${end.lat}&end_lng=${end.lng}`);
     if (!response.ok) throw new Error('Route calculation failed');
+    return response.json();
+  },
+
+  async getLogisticsRoute(lat: number, lng: number) {
+    const response = await fetch(`${API_BASE_URL}/logistics-route?start_lat=${lat}&start_lng=${lng}`);
+    if (!response.ok) throw new Error('Logistics route calculation failed');
     return response.json();
   },
 
