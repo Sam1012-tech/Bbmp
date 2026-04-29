@@ -14,6 +14,14 @@
 - **🚚 Smart Logistics & Routing**: Uses the **OSRM (Open Source Routing Machine)** API to automatically calculate optimized routes for garbage trucks from a dump site to the nearest DWCC, and finally to a WPU.
 - **📊 Real-time Monitoring**: Track active dump sites, cleaned zones, and active fleet operations through a responsive UI.
 
+## 📱 Sky Swachh Citizen App
+
+![Citizen App Space](space_app.jpeg)
+
+**[Sky Swachh Citizen App Repository](https://github.com/aniksha23/Sky-Swachh---Citizen-App)**
+
+CitizenApp gamifies civic engagement in Bengaluru. Snap photos of illegal dump sites with automatic GPS and time-stamps. AI-powered ML verifies waste in seconds. Verified reports earn 50 points, unlock ranks, and alert cleanup authorities instantly. Compete on leaderboards, become an Environmental Hero, and make cities cleaner together.
+
 ## 🛠️ Tech Stack
 
 ### Frontend
