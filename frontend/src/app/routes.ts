@@ -1,7 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import { Root } from "./components/Root";
 import { MapDashboard } from "./components/MapDashboard";
-import { CitizenApp } from "./components/CitizenApp";
 import { OfficerDashboard } from "./components/OfficerDashboard";
 import { TruckRoutes } from "./components/TruckRoutes";
 import { Analytics } from "./components/Analytics";
@@ -14,7 +13,6 @@ export const router = createBrowserRouter([
     Component: Root,
     children: [
       { index: true, Component: MapDashboard },
-      { path: "citizen", Component: CitizenApp },
       { path: "officer", Component: OfficerDashboard },
       { path: "trucks", Component: TruckRoutes },
       { path: "analytics", Component: Analytics },
