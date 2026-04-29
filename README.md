@@ -1,6 +1,8 @@
 # 🌍 Sky Swachh
 
-![Sky Swachh Map Dashboard](./frontend/public/vite.svg) <!-- Replace with actual banner if available -->
+## Sky Swachh Map Dashboard
+ <img width="1600" height="872" alt="image" src="https://github.com/user-attachments/assets/86d8ad61-ae98-45f8-a0aa-c5ad80c78539" />
+
 
 **Sky Swachh** is an intelligent, map-based platform designed to detect, monitor, and manage illegal waste dumping in Bengaluru. By leveraging AI-detected dump sites, citizen reports, and smart routing algorithms, it streamlines the waste collection process from detection to processing.
 
