@@ -1,12 +1,31 @@
-import { Outlet, Link, useLocation, useNavigate } from "react-router";
-import { Map, Users, Truck, BarChart3, FileText, Menu, X, LogIn, LogOut } from "lucide-react";
+import { Outlet, Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Map, Truck, BarChart3, FileText, Menu, X, LogIn, LogOut, ChevronDown } from "lucide-react";
 import { useState, useEffect } from "react";
+
+const WARDS = [
+  { name: "Byrasandra", dumps: 18 },
+  { name: "HSR Layout", dumps: 24 },
+  { name: "Indiranagara", dumps: 31 },
+  { name: "JP Nagara", dumps: 15 },
+  { name: "Sarakki", dumps: 12 },
+  { name: "Thanisandra", dumps: 28 },
+  { name: "Whitefield", dumps: 42 },
+];
 
 export function Root() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  const selectedWard = searchParams.get("ward") || "";
+  const isMapPage = location.pathname === "/";
+
+  const handleWardChange = (ward: string) => {
+    if (ward) setSearchParams({ ward });
+    else setSearchParams({});
+  };
 
   useEffect(() => {
     setIsLoggedIn(!!localStorage.getItem("token"));
@@ -20,7 +39,6 @@ export function Root() {
 
   const navigation = [
     { name: 'Map Dashboard', path: '/', icon: Map },
-    { name: 'Citizen App', path: '/citizen', icon: Users },
     { name: 'Officer Dashboard', path: '/officer', icon: FileText },
     { name: 'Truck Routes', path: '/trucks', icon: Truck },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
@@ -44,7 +62,7 @@ export function Root() {
                 <Map className="h-6 w-6 text-[#2d7738]" />
               </div>
               <div>
-                <h1 className="font-semibold text-lg">BBMP Waste Monitor</h1>
+                <h1 className="font-semibold text-lg">Sky Swachh</h1>
                 <p className="text-xs text-green-100">AI-Powered Satellite Tracking</p>
               </div>
             </div>
@@ -70,6 +88,25 @@ export function Root() {
                   );
                 })}
               </nav>
+
+              {/* Ward Selector — only on Map Dashboard */}
+              {isMapPage && (
+                <div className="hidden lg:flex items-center gap-1.5 bg-white/10 rounded-lg px-3 py-1.5">
+                  <ChevronDown className="h-3.5 w-3.5 text-green-100 shrink-0" />
+                  <select
+                    value={selectedWard}
+                    onChange={(e) => handleWardChange(e.target.value)}
+                    className="bg-transparent text-sm text-white focus:outline-none cursor-pointer"
+                  >
+                    <option value="" className="text-gray-800">All Wards</option>
+                    {WARDS.map((w) => (
+                      <option key={w.name} value={w.name} className="text-gray-800">
+                        {w.name} ({w.dumps} dumps)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="h-6 w-px bg-white/20 hidden lg:block mx-2" />
 
