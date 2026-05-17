@@ -10,6 +10,67 @@ import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
+const DEFAULT_SITE_IMAGES: Record<string, { satelliteImage: string; citizenPhoto?: string }> = {
+  Indiranagar: {
+    satelliteImage: "/images/indiranagar-satellite.png",
+    citizenPhoto: "/images/indiranagar-satellite.png",
+  },
+  Marathahalli: {
+    satelliteImage: "/images/marathahalli-satellite.png",
+    citizenPhoto: "/images/marathahalli-satellite.png",
+  },
+  Koramangala: {
+    satelliteImage: "/images/koramangala-satellite.png",
+    citizenPhoto: "/images/koramangala-satellite.png",
+  },
+  Whitefield: {
+    satelliteImage: "/images/whitefield-satellite.png",
+    citizenPhoto: "/images/whitefield-satellite.png",
+  },
+  Yelahanka: {
+    satelliteImage: "https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1200&auto=format&fit=crop",
+  },
+  "HSR Layout": {
+    satelliteImage: "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=1200&auto=format&fit=crop",
+  },
+  Jayanagar: {
+    satelliteImage: "https://images.unsplash.com/photo-1431794062232-2a99a5431c6c?w=1200&auto=format&fit=crop",
+  },
+  Malleshwaram: {
+    satelliteImage: "https://images.unsplash.com/photo-1465101046530-73398c7f28ca?w=1200&auto=format&fit=crop",
+  },
+};
+
+const FALLBACK_SATELLITE_IMAGE =
+  "https://images.unsplash.com/photo-1611320351495-4a700c82edea?w=1200&auto=format&fit=crop";
+
+function getLatLng(feature: any): { lat?: number; lng?: number } {
+  const geometry = feature?.geometry;
+  const properties = feature?.properties || {};
+  const coordinates = geometry?.coordinates;
+
+  if (geometry?.type === "Point" && Array.isArray(coordinates) && coordinates.length >= 2) {
+    return { lng: Number(coordinates[0]), lat: Number(coordinates[1]) };
+  }
+
+  if (geometry?.type === "Polygon" && Array.isArray(coordinates?.[0]?.[0])) {
+    const first = coordinates[0][0];
+    return { lng: Number(first[0]), lat: Number(first[1]) };
+  }
+
+  if (geometry?.type === "MultiPolygon" && Array.isArray(coordinates?.[0]?.[0]?.[0])) {
+    const first = coordinates[0][0][0];
+    return { lng: Number(first[0]), lat: Number(first[1]) };
+  }
+
+  const lat = properties.lat ?? properties.latitude;
+  const lng = properties.lng ?? properties.longitude ?? properties.lon;
+  return {
+    lat: lat !== undefined ? Number(lat) : undefined,
+    lng: lng !== undefined ? Number(lng) : undefined,
+  };
+}
+
 // Fix Leaflet marker icons
 // @ts-ignore
 delete L.Icon.Default.prototype._getIconUrl;
@@ -49,12 +110,19 @@ export function OfficerDashboard() {
     async function loadData() {
       try {
         const data = await api.getDumpsites();
-        // Map GeoJSON to flat DumpSite type
-        const sites = data.features.map((f: any) => ({
-          ...f.properties,
-          lat: f.geometry.coordinates[1],
-          lng: f.geometry.coordinates[0],
-        }));
+        const sites = data.features.map((f: any) => {
+          const { lat, lng } = getLatLng(f);
+          const ward = f?.properties?.ward || "Unknown Ward";
+          const wardImages = DEFAULT_SITE_IMAGES[ward] || {};
+
+          return {
+            ...f.properties,
+            lat,
+            lng,
+            satelliteImage: f?.properties?.satelliteImage || wardImages.satelliteImage || FALLBACK_SATELLITE_IMAGE,
+            citizenPhoto: f?.properties?.citizenPhoto || wardImages.citizenPhoto,
+          };
+        });
         setActiveDumps(sites.filter((site: any) => site.status !== 'cleaned'));
       } catch (err) {
         console.error("Failed to load dumpsites", err);
@@ -408,11 +476,36 @@ export function OfficerDashboard() {
 
                     <div className="space-y-4">
                       <div>
+                        <p className="text-sm text-gray-600 mb-2">Evidence Images</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <img
+                            src={selectedAlert.satelliteImage || FALLBACK_SATELLITE_IMAGE}
+                            alt="Satellite"
+                            className="w-full h-28 object-cover rounded-lg"
+                            onError={(e) => {
+                              e.currentTarget.src = FALLBACK_SATELLITE_IMAGE;
+                            }}
+                          />
+                          <img
+                            src={selectedAlert.citizenPhoto || selectedAlert.satelliteImage || FALLBACK_SATELLITE_IMAGE}
+                            alt="Citizen report"
+                            className="w-full h-28 object-cover rounded-lg"
+                            onError={(e) => {
+                              e.currentTarget.src = FALLBACK_SATELLITE_IMAGE;
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
                         <p className="text-sm text-gray-600 mb-1">Satellite Image</p>
                         <img
-                          src={selectedAlert.satelliteImage}
+                          src={selectedAlert.satelliteImage || FALLBACK_SATELLITE_IMAGE}
                           alt="Satellite"
                           className="w-full h-32 object-cover rounded-lg"
+                          onError={(e) => {
+                            e.currentTarget.src = FALLBACK_SATELLITE_IMAGE;
+                          }}
                         />
                       </div>
 
@@ -423,6 +516,9 @@ export function OfficerDashboard() {
                             src={selectedAlert.citizenPhoto}
                             alt="Citizen report"
                             className="w-full h-32 object-cover rounded-lg"
+                            onError={(e) => {
+                              e.currentTarget.src = FALLBACK_SATELLITE_IMAGE;
+                            }}
                           />
                         </div>
                       )}
@@ -434,7 +530,11 @@ export function OfficerDashboard() {
 
                       <div>
                         <p className="text-sm text-gray-600 mb-1">Coordinates</p>
-                        <p className="text-sm font-mono">{selectedAlert.lat.toFixed(4)}, {selectedAlert.lng.toFixed(4)}</p>
+                        {Number.isFinite(Number(selectedAlert.lat)) && Number.isFinite(Number(selectedAlert.lng)) ? (
+                          <p className="text-sm font-mono">{Number(selectedAlert.lat).toFixed(4)}, {Number(selectedAlert.lng).toFixed(4)}</p>
+                        ) : (
+                          <p className="text-sm text-gray-500">Coordinates unavailable</p>
+                        )}
                       </div>
 
                       <div>
@@ -504,6 +604,11 @@ export function OfficerDashboard() {
                 setAssignedToday(prev => prev + 1);
 
                 if (selectedAlert) {
+                  if (!Number.isFinite(Number(selectedAlert.lat)) || !Number.isFinite(Number(selectedAlert.lng))) {
+                    alert("Coordinates are unavailable for this alert. Please select another site.");
+                    return;
+                  }
+
                   // Use consistent 127.0.0.1 for backend calls
                   const routeRes = await fetch(`http://127.0.0.1:8000/api/route?start_lat=${selectedAlert.lat}&start_lng=${selectedAlert.lng}&end_lat=12.9716&end_lng=77.5946`);
                   if (routeRes.ok) {

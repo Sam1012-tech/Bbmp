@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router";
 import { 
   X, 
   Calendar, 
@@ -49,6 +50,56 @@ L.Icon.Default.mergeOptions({
 
 const SEVERITY_R = { high: 24, medium: 18, low: 12 };
 
+const WARD_SITE_IMAGES: Record<string, { satelliteImage: string; citizenPhoto?: string }> = {
+  Indiranagar: {
+    satelliteImage: "/images/indiranagar-satellite.png",
+    citizenPhoto: "/images/indiranagar-satellite.png",
+  },
+  Indiranagara: {
+    satelliteImage: "/images/indiranagar-satellite.png",
+    citizenPhoto: "/images/indiranagar-satellite.png",
+  },
+  Marathahalli: {
+    satelliteImage: "/images/marathahalli-satellite.png",
+    citizenPhoto: "/images/marathahalli-satellite.png",
+  },
+  Whitefield: {
+    satelliteImage: "/images/whitefield-satellite.png",
+    citizenPhoto: "/images/whitefield-satellite.png",
+  },
+  Koramangala: {
+    satelliteImage: "/images/koramangala-satellite.png",
+    citizenPhoto: "/images/koramangala-satellite.png",
+  },
+};
+
+const FALLBACK_SITE_IMAGE = "/images/indiranagar-satellite.png";
+
+const formatReportStatus = (status?: string) => {
+  if (!status) return "Pending";
+  return status
+    .toString()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const getReportStatusStyle = (status?: string) => {
+  const normalized = (status || "pending").toLowerCase();
+  if (["submitted", "pending"].includes(normalized)) {
+    return { bg: "#fef3c7", color: "#92400e" };
+  }
+  if (["assigned", "verified"].includes(normalized)) {
+    return { bg: "#dbeafe", color: "#1d4ed8" };
+  }
+  if (["in-progress", "in progress", "in_progress"].includes(normalized)) {
+    return { bg: "#ffedd5", color: "#c2410c" };
+  }
+  if (["completed", "resolved", "cleaned"].includes(normalized)) {
+    return { bg: "#dcfce7", color: "#166534" };
+  }
+  return { bg: "#e5e7eb", color: "#374151" };
+};
+
 export interface GeocodeResult {
   display_name: string;
   lat: number;
@@ -87,7 +138,6 @@ export function MapDashboard() {
 
   const [layers, setLayers] = useState({
     zones: true,
-    cctv: true,
     prediction: false,
   });
 
@@ -106,20 +156,31 @@ export function MapDashboard() {
     yellow: darkMode ? "#fbbf24" : "#d97706",
   };
 
+  const [searchParams] = useSearchParams();
+  const selectedWard = searchParams.get("ward") || "";
+
   const [dumpPolygons, setDumpPolygons] = useState<any>(null);
   const [wasteProcessingUnits, setWasteProcessingUnits] = useState<any>(null);
   const [dryWasteCentres, setDryWasteCentres] = useState<any>(null);
+  const [wardBoundaries, setWardBoundaries] = useState<any>(null);
+  const [citizenReports, setCitizenReports] = useState<any[]>([]);
+
+  const activeDumpCount = liveDumps.filter((d) => d.status !== "cleaned").length;
+  const polygonDumpCount = dumpPolygons?.features?.length ?? 0;
+  const reportCount = citizenReports?.length ?? 0;
 
   // --- Initial Data Fetch ---
   useEffect(() => {
     async function fetchData() {
       try {
-        const [dumpsRes, routesRes, polygonsRes, wpcRes, dwcRes] = await Promise.all([
+        const [dumpsRes, routesRes, polygonsRes, wpcRes, dwcRes, wardRes, reportsRes] = await Promise.all([
           fetch("http://localhost:8000/api/dumpsites"),
           fetch("http://localhost:8000/api/routes"),
           fetch("http://localhost:8000/api/dump-polygons"),
           fetch("http://localhost:8000/api/waste-processing-units"),
           fetch("http://localhost:8000/api/dry-waste-centres"),
+          fetch("http://localhost:8000/api/ward-boundaries"),
+          fetch("http://localhost:8000/api/citizen-reports"),
         ]);
 
         const dumpsGeoJson = dumpsRes.ok ? await dumpsRes.json() : { features: [] };
@@ -127,16 +188,26 @@ export function MapDashboard() {
         if (polygonsRes.ok) setDumpPolygons(await polygonsRes.json());
         if (wpcRes.ok) setWasteProcessingUnits(await wpcRes.json());
         if (dwcRes.ok) setDryWasteCentres(await dwcRes.json());
+        if (wardRes.ok) setWardBoundaries(await wardRes.json());
+        if (reportsRes.ok) {
+          const rData = await reportsRes.json();
+          console.log("citizen-reports from Firestore:", rData);
+          setCitizenReports(rData);
+        }
 
         // Map GeoJSON to our flat types
         const sites: DumpSite[] = (dumpsGeoJson.features || []).map((f: any) => {
           const coords = f.geometry?.coordinates;
           // geometry may be Point or MultiPolygon (for AI-detected sites)
           const isPoint = f.geometry?.type === "Point";
+          const ward = f?.properties?.ward || "";
+          const wardImages = WARD_SITE_IMAGES[ward] || {};
           return {
             ...f.properties,
             lat: isPoint ? coords[1] : f.properties.lat,
             lng: isPoint ? coords[0] : f.properties.lng,
+            satelliteImage: f?.properties?.satelliteImage || wardImages.satelliteImage || FALLBACK_SITE_IMAGE,
+            citizenPhoto: f?.properties?.citizenPhoto || wardImages.citizenPhoto,
           };
         });
 
@@ -153,7 +224,6 @@ export function MapDashboard() {
           stops: []
         }));
 
-        console.log("trucks loaded:", trucks.length, trucks);
         setLiveDumps(sites);
         setLiveTrucks(trucks);
         setIsError(false);
@@ -250,10 +320,24 @@ export function MapDashboard() {
           color: "#fff",
           weight: 2
         }).addTo(mapInstance.current!);
+
+        const popupImage = site.satelliteImage || FALLBACK_SITE_IMAGE;
+        marker.bindPopup(`
+          <div style="min-width:220px;max-width:240px;font-family:Inter,system-ui,sans-serif;">
+            <p style="font-weight:700;font-size:13px;margin:0;color:#111827;">${site.ward || "Dump Site"}</p>
+            <p style="font-size:11px;color:#6b7280;margin:2px 0 6px;">${site.description || "No description"}</p>
+            <img src="${popupImage}" style="width:100%;height:92px;object-fit:cover;border-radius:8px;display:block;" />
+            <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+              <span style="font-size:10px;padding:2px 7px;border-radius:999px;background:#fee2e2;color:#991b1b;font-weight:700;">${site.severity?.toUpperCase?.() || "MEDIUM"}</span>
+              <span style="font-size:10px;padding:2px 7px;border-radius:999px;background:#e5e7eb;color:#374151;font-weight:700;">${site.status?.toUpperCase?.() || "DETECTED"}</span>
+            </div>
+          </div>
+        `, { maxWidth: 250 });
         
         marker.bindTooltip(`<b>${site.ward}</b><br/>${site.description}`);
         marker.on('click', (e) => {
           L.DomEvent.stopPropagation(e);
+          marker.openPopup();
           setSelectedSite(site);
         });
       });
@@ -319,23 +403,7 @@ export function MapDashboard() {
       });
     }
 
-    // CCTV Layer
-    if (layers.cctv) {
-      const CCTV_MOCK = [
-        { id: 'c1', lat: 12.9780, lng: 77.5910, label: 'MG Road Junction' },
-        { id: 'c2', lat: 12.9350, lng: 77.6144, label: 'Koramangala 8th Block' },
-      ];
-      CCTV_MOCK.forEach(c => {
-        L.marker([c.lat, c.lng], {
-          icon: L.divIcon({
-            className: 'cctv-icon',
-            html: `<div style="background-color: #06b6d4; width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: white; border: 1px solid white;">📹</div>`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-          })
-        }).addTo(mapInstance.current!).bindPopup(c.label);
-      });
-    }
+    // CCTV Layer removed
 
     // Active Route
     if (activeRoute && activeRoute.geometry) {
@@ -369,6 +437,75 @@ export function MapDashboard() {
       }).addTo(mapInstance.current!).bindPopup(`Destination: ${destPoint.display_name}`);
     }
 
+    // Ward Boundaries
+    const WARD_COLORS: Record<string, string> = {
+      "Byrasandra":    "#10b981", // emerald
+      "HSR Layout":    "#6366f1", // indigo
+      "Indiranagara":  "#f59e0b", // amber
+      "JP Nagara":     "#ec4899", // pink
+      "Sarakki":       "#14b8a6", // teal
+      "Thanisandra":   "#8b5cf6", // violet
+      "Whitefield":    "#f97316", // orange
+    };
+    if (wardBoundaries?.features) {
+      wardBoundaries.features.forEach((f: any) => {
+        const isSelected = selectedWard && f.properties.name === selectedWard;
+        const baseColor = WARD_COLORS[f.properties.name] ?? "#3b82f6";
+        const layer = L.geoJSON(f, {
+          style: {
+            color: baseColor,
+            fillColor: baseColor,
+            fillOpacity: isSelected ? 0.30 : 0.13,
+            weight: isSelected ? 3 : 1.5,
+            dashArray: isSelected ? undefined : "6 4",
+          }
+        }).addTo(mapInstance.current!);
+        layer.bindTooltip(
+          `<b>${f.properties.name}</b><br/>${f.properties.dumps} dump sites`,
+          { sticky: true }
+        );
+      });
+
+      // Zoom to selected ward
+      if (selectedWard) {
+        const match = wardBoundaries.features.find((f: any) => f.properties.name === selectedWard);
+        if (match) {
+          mapInstance.current!.fitBounds(L.geoJSON(match).getBounds(), { padding: [40, 40] });
+        }
+      }
+    }
+
+    // Citizen Reports from Firestore
+    if (Array.isArray(citizenReports)) {
+      citizenReports.forEach((r: any) => {
+        const statusStyle = getReportStatusStyle(r.status);
+        const normalizedStatus = (r.status || "pending").toLowerCase();
+        const photoThumb = r.photo
+          ? `<div style="width:48px;height:48px;border-radius:50%;border:2.5px solid white;background-image:url('${r.photo}');background-size:cover;background-position:center;box-shadow:0 3px 8px rgba(0,0,0,0.4);"></div>`
+          : `<div style="background:#0ea5e9;width:36px;height:36px;border-radius:50%;border:2.5px solid white;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,0.4);font-size:16px;">📍</div>`;
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="position:relative;display:flex;align-items:center;justify-content:center;">${photoThumb}<span style="position:absolute;bottom:0px;right:0px;width:14px;height:14px;border-radius:50%;border:2px solid white;background:${normalizedStatus === 'completed' ? '#16a34a' : normalizedStatus.includes('progress') ? '#ea580c' : normalizedStatus === 'assigned' || normalizedStatus === 'verified' ? '#2563eb' : '#d97706'}"></span></div>`,
+          iconSize: [48, 48],
+          iconAnchor: [24, 24],
+        });
+        const photoHtml = r.photo
+          ? `<img src="${r.photo}" style="width:100%;height:96px;object-fit:cover;border-radius:8px;margin-top:8px;display:block;" />`
+          : `<p style="color:#9ca3af;font-size:11px;margin-top:4px;">No photo</p>`;
+        L.marker([r.lat, r.lng], { icon })
+          .addTo(mapInstance.current!)
+          .bindPopup(`
+            <div style="min-width:215px;max-width:230px;font-family:Inter,system-ui,sans-serif;">
+              <p style="font-weight:700;font-size:13px;margin:0;color:#111827;">Citizen Report</p>
+              <p style="font-size:11px;color:#6b7280;margin:2px 0;">${r.ward || 'Unknown ward'} &bull; ${r.waste_type || 'Unknown'}</p>
+              <span style="font-size:10px;padding:3px 8px;background:${statusStyle.bg};color:${statusStyle.color};border-radius:999px;font-weight:700;">${formatReportStatus(r.status)}</span>
+              ${photoHtml}
+              ${r.description ? `<p style="font-size:11px;margin-top:8px;color:#374151;line-height:1.35;">${r.description}</p>` : ''}
+            </div>
+          `, { maxWidth: 240 });
+      });
+    }
+
     // Report Marker
     if (reportClick && reportMode && !reportSubmitted) {
       L.marker([reportClick.y, reportClick.x], {
@@ -380,7 +517,7 @@ export function MapDashboard() {
       }).addTo(mapInstance.current!);
     }
 
-  }, [liveDumps, liveTrucks, dumpPolygons, wasteProcessingUnits, dryWasteCentres, layers, activeRoute, sourcePoint, destPoint, reportClick, reportMode, reportSubmitted]);
+  }, [liveDumps, liveTrucks, dumpPolygons, wasteProcessingUnits, dryWasteCentres, wardBoundaries, selectedWard, citizenReports, layers, activeRoute, sourcePoint, destPoint, reportClick, reportMode, reportSubmitted]);
 
   // --- Handlers ---
   const handleMapClickInternal = (e: L.LeafletMouseEvent) => {
@@ -623,8 +760,7 @@ export function MapDashboard() {
                 <p className="text-[10px] font-bold uppercase mb-2" style={{ color: C.textMuted }}>MAP LAYERS</p>
                 <div className="space-y-1">
                   {[
-                    { key: "zones" as const, label: "BBMP Boundaries", icon: <Layers className="h-3.5 w-3.5" /> },
-                    { key: "cctv" as const, label: "CCTV Cameras", icon: <Camera className="h-3.5 w-3.5" /> },
+                    { key: "zones" as const, label: "Ward Boundaries", icon: <Layers className="h-3.5 w-3.5" /> },
                     { key: "prediction" as const, label: "Risk Zones", icon: <Shield className="h-3.5 w-3.5" /> },
                   ].map(({ key, label, icon }) => (
                     <button
@@ -650,7 +786,9 @@ export function MapDashboard() {
 
               {/* Truck Controls */}
               <div className="border rounded-lg p-3 mb-4" style={{ borderColor: C.panelBorder }}>
-                <p className="text-xs font-semibold mb-3" style={{ color: C.textMuted }}>TRUCK OPERATIONS</p>
+                <p className="text-xs font-semibold mb-3" style={{ color: C.textMuted }}>
+                  TRUCK OPERATIONS <span className="ml-1 text-[10px]">({liveTrucks.length} active)</span>
+                </p>
                 <div className="space-y-2">
                   {liveTrucks.map(truck => (
                     <Button
@@ -665,6 +803,9 @@ export function MapDashboard() {
                     </Button>
                   ))}
                 </div>
+                <p className="text-[10px] mt-2" style={{ color: C.textMuted }}>
+                  Routing prioritizes high-severity active dump sites.
+                </p>
               </div>
             </div>
           </motion.div>
@@ -692,6 +833,19 @@ export function MapDashboard() {
             <span className="font-semibold">LIVE</span>
             <span className="text-gray-400">|</span>
             <span className="font-medium text-gray-700">Bengaluru Waste Monitor</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg shadow-sm text-[11px] bg-white/90 border text-gray-700">
+            <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+            <span className="font-semibold">{activeDumpCount} Active</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg shadow-sm text-[11px] bg-white/90 border text-gray-700">
+            <Radio className="h-3.5 w-3.5 text-sky-600" />
+            <span className="font-semibold">{reportCount} Citizen Reports</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg shadow-sm text-[11px] bg-white/90 border text-gray-700">
+            <Shield className="h-3.5 w-3.5 text-rose-600" />
+            <span className="font-semibold">{polygonDumpCount} AI Polygons</span>
           </div>
 
           <button
@@ -831,6 +985,14 @@ export function MapDashboard() {
                     <span className="text-xs font-bold uppercase p-1 rounded bg-red-100 text-red-700">{selectedSite.severity} Severity</span>
                     <span className="text-[10px] text-gray-500">Score: {selectedSite.priorityScore}</span>
                  </div>
+                  <img
+                    src={selectedSite.satelliteImage || FALLBACK_SITE_IMAGE}
+                    alt={`${selectedSite.ward} satellite`}
+                    className="w-full h-28 rounded-lg object-cover"
+                    onError={(e) => {
+                     e.currentTarget.src = FALLBACK_SITE_IMAGE;
+                    }}
+                  />
                  <p className="text-xs text-gray-700">{selectedSite.description}</p>
                                    <Button 
                     className="w-full bg-[#2d7738] h-10 text-xs font-bold transition-all shadow-md active:scale-95" 

@@ -83,9 +83,86 @@ with open(DATA_DIR / "waste_processing_units.json") as f:
 with open(DATA_DIR / "dry_waste_centres.json") as f:
     _dry_waste_centres = json.load(f)
 
+with open(DATA_DIR / "ward_boundaries.json") as f:
+    _ward_boundaries = json.load(f)
+
 routes = {
     "type": "FeatureCollection",
-    "features": []
+    "features": [
+        {
+            "type": "Feature",
+            "id": "T1",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [77.5946, 12.9716],
+                    [77.6245, 12.9352],
+                    [77.6411, 12.9141]
+                ]
+            },
+            "properties": {
+                "id": "T1",
+                "driverName": "Rajesh Kumar",
+                "vehicleNumber": "KA-01-AB-1234",
+                "progress": 65
+            }
+        },
+        {
+            "type": "Feature",
+            "id": "T2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [77.5970, 13.0358],
+                    [77.6136, 12.9072],
+                    [77.6450, 12.8988]
+                ]
+            },
+            "properties": {
+                "id": "T2",
+                "driverName": "Suresh Patil",
+                "vehicleNumber": "KA-01-CD-5678",
+                "progress": 45
+            }
+        },
+        {
+            "type": "Feature",
+            "id": "T3",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [77.7495, 12.9654],
+                    [77.7200, 12.9400],
+                    [77.7000, 12.9100],
+                    [77.686032, 12.857962]
+                ]
+            },
+            "properties": {
+                "id": "T3",
+                "driverName": "Mohan Reddy",
+                "vehicleNumber": "KA-05-EF-2345",
+                "progress": 30
+            }
+        },
+        {
+            "type": "Feature",
+            "id": "T4",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                    [77.5923, 13.0450],
+                    [77.5450, 13.0400],
+                    [77.479684, 13.031319]
+                ]
+            },
+            "properties": {
+                "id": "T4",
+                "driverName": "Priya Nair",
+                "vehicleNumber": "KA-03-GH-6789",
+                "progress": 55
+            }
+        }
+    ]
 }
 
 summary = {
@@ -171,11 +248,31 @@ async def get_dump_polygons():
 
 @app.get("/api/waste-processing-units")
 async def get_waste_processing_units():
-    return _waste_processing_units
+    features = _waste_processing_units.get("features", [])
+    if len(features) <= 6:
+        return _waste_processing_units
+
+    reduced = {
+        **_waste_processing_units,
+        "features": features[:6]
+    }
+    return reduced
 
 @app.get("/api/dry-waste-centres")
 async def get_dry_waste_centres():
-    return _dry_waste_centres
+    features = _dry_waste_centres.get("features", [])
+    if len(features) <= 80:
+        return _dry_waste_centres
+
+    reduced = {
+        **_dry_waste_centres,
+        "features": features[::2][:80]
+    }
+    return reduced
+
+@app.get("/api/ward-boundaries")
+async def get_ward_boundaries():
+    return _ward_boundaries
 
 @app.get("/api/routes")
 async def get_routes():
@@ -184,6 +281,47 @@ async def get_routes():
 @app.get("/api/summary")
 async def get_summary():
     return summary
+
+@app.get("/api/citizen-reports")
+async def get_citizen_reports():
+    """Reads user-submitted reports from Firestore 'reports' collection."""
+    if not USE_FIRESTORE:
+        return []
+    try:
+        docs = list(db.collection("reports").stream())
+        results = []
+        for doc in docs:
+            d = doc.to_dict()
+            # Extract from Firestore GeoPoint, dict, or flat fields
+            loc = d.get("location")
+            if loc is not None:
+                if hasattr(loc, "latitude"):  # Firestore GeoPoint
+                    lat, lng = loc.latitude, loc.longitude
+                elif isinstance(loc, dict):
+                    lat = loc.get("latitude") or loc.get("lat")
+                    lng = loc.get("longitude") or loc.get("lng")
+                else:
+                    lat, lng = None, None
+            else:
+                lat = d.get("lat") or d.get("latitude")
+                lng = d.get("lng") or d.get("longitude") or d.get("lon")
+            if lat is None or lng is None:
+                continue
+            results.append({
+                "id": doc.id,
+                "lat": float(lat),
+                "lng": float(lng),
+                "photo": d.get("image_url") or d.get("photo") or d.get("imageUrl") or None,
+                "waste_type": d.get("waste_type") or d.get("wasteType") or d.get("ml_label") or "Unknown",
+                "description": d.get("description") or "",
+                "ward": d.get("ward") or "",
+                "status": d.get("status") or "pending",
+                "reportedDate": str(d.get("submitted_at") or d.get("reportedDate") or d.get("createdAt") or ""),
+            })
+        return results
+    except Exception as e:
+        print(f"Error reading citizen reports: {e}")
+        return []
 
 @app.post("/api/reports")
 async def create_report(report: Report):
